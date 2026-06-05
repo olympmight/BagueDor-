@@ -8,28 +8,42 @@
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #0a0a0a; color: #fff; font-family: monospace; }
     header { padding: 20px; text-align: center; border-bottom: 2px solid #FF4D00; }
-    h1 { color: #FF4D00; font-size: 24px; }
-    #info { padding: 15px; text-align: center; font-size: 14px; color: #aaa; }
-    #controls { display: flex; justify-content: center; gap: 20px; padding: 15px; }
-    button { padding: 12px 30px; border: none; border-radius: 8px; font-size: 16px; font-family: monospace; cursor: pointer; font-weight: bold; }
+    h1 { color: #FF4D00; font-size: 22px; letter-spacing: 2px; }
+    h1 span { color: #fff; }
+    #controls { display: flex; justify-content: center; gap: 15px; padding: 15px; }
+    button { padding: 12px 28px; border: none; border-radius: 8px; font-size: 15px; font-family: monospace; cursor: pointer; font-weight: bold; transition: opacity 0.2s; }
+    button:active { opacity: 0.7; }
     #btn-start { background: #FF4D00; color: #fff; }
-    #btn-stop { background: #333; color: #fff; }
-    #status { text-align: center; font-size: 13px; color: #FF4D00; padding-bottom: 10px; }
-    #map { width: 100%; height: 60vh; }
+    #btn-stop { background: #222; color: #aaa; border: 1px solid #333; }
+    #status { text-align: center; font-size: 13px; color: #FF4D00; padding-bottom: 8px; min-height: 20px; }
+    #info { padding: 10px 15px; text-align: center; font-size: 13px; color: #aaa; background: #111; border-bottom: 1px solid #222; }
+    #map { width: 100%; height: 45vh; }
+    #historique { padding: 15px; }
+    #historique h2 { color: #FF4D00; font-size: 14px; margin-bottom: 10px; letter-spacing: 1px; }
+    .entry { background: #111; border-left: 3px solid #FF4D00; padding: 8px 12px; margin-bottom: 8px; border-radius: 4px; font-size: 12px; color: #ccc; }
+    .entry span { color: #FF4D00; }
   </style>
 </head>
 <body>
-  <header><h1>🔥 BagueDor — Tracker</h1></header>
+  <header><h1>🔥 BAGUE<span>DOR</span></h1></header>
   <div id="controls">
     <button id="btn-start" onclick="sendCommand('start')">▶ START</button>
     <button id="btn-stop" onclick="sendCommand('stop')">■ STOP</button>
   </div>
   <div id="status">En attente...</div>
-  <div id="info">Chargement de la position...</div>
+  <div id="info">Chargement...</div>
   <div id="map"></div>
+  <div id="historique">
+    <h2>📜 HISTORIQUE</h2>
+    <div id="entries"></div>
+  </div>
+
+  <audio id="beep" src="https://www.soundjay.com/buttons/sounds/button-09.mp3" preload="auto"></audio>
 
   <script>
     const FIREBASE_URL = "https://baguedor-default-rtdb.firebaseio.com";
+    let lastTimestamp = null;
+    let history = [];
 
     async function sendCommand(cmd) {
       await fetch(`${FIREBASE_URL}/command.json`, {
@@ -37,21 +51,44 @@
         body: JSON.stringify(cmd)
       });
       document.getElementById("status").innerText =
-        cmd === "start" ? "✅ Commande START envoyée" : "🛑 Commande STOP envoyée";
+        cmd === "start" ? "✅ START envoyé — tracking actif" : "🛑 STOP envoyé — tracking arrêté";
     }
 
     async function loadPosition() {
       const res = await fetch(`${FIREBASE_URL}/location.json`);
       const data = await res.json();
       if (!data) return;
+
       const lat = data.latitude;
       const lng = data.longitude;
-      const time = new Date(data.timestamp * 1000).toLocaleString();
+      const ts = data.timestamp;
+      const time = new Date(ts * 1000).toLocaleString();
+
       document.getElementById("info").innerHTML =
-        `📍 Lat: ${lat} | Lng: ${lng} | ⏱ ${time}`;
+        `📍 <b style="color:#FF4D00">${lat.toFixed(6)}</b>, <b style="color:#FF4D00">${lng.toFixed(6)}</b> &nbsp;|&nbsp; ⏱ ${time}`;
+
       const mapUrl = `https://maps.google.com/maps?q=${lat},${lng}&z=16&output=embed`;
       document.getElementById("map").innerHTML =
         `<iframe width="100%" height="100%" src="${mapUrl}" frameborder="0"></iframe>`;
+
+      if (lastTimestamp && ts !== lastTimestamp) {
+        document.getElementById("beep").play().catch(() => {});
+        document.getElementById("status").innerText = "🔔 Nouvelle position reçue !";
+      }
+      lastTimestamp = ts;
+
+      if (!history.length || history[0].ts !== ts) {
+        history.unshift({ lat, lng, time, ts });
+        if (history.length > 5) history.pop();
+        renderHistory();
+      }
+    }
+
+    function renderHistory() {
+      const el = document.getElementById("entries");
+      el.innerHTML = history.map((h, i) =>
+        `<div class="entry">${i === 0 ? "🔴" : "⚪"} <span>${h.lat.toFixed(5)}, ${h.lng.toFixed(5)}</span><br>${h.time}</div>`
+      ).join("");
     }
 
     loadPosition();
