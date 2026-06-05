@@ -2,9 +2,24 @@ import subprocess
 import requests
 import json
 import time
+import os
+import uuid
 
 FIREBASE_URL = "https://baguedor-default-rtdb.firebaseio.com"
-DEVICE_ID = "might"  # Changer selon l'appareil : "soeur", "pote", etc.
+ID_FILE = os.path.expanduser("~/.baguedor_id")
+
+def get_device_id():
+    if os.path.exists(ID_FILE):
+        with open(ID_FILE, "r") as f:
+            return f.read().strip()
+    device_id = "device_" + uuid.uuid4().hex[:6]
+    with open(ID_FILE, "w") as f:
+        f.write(device_id)
+    print(f"🆔 Nouvel ID généré : {device_id}")
+    print(f"📤 Envoie cet ID à ton admin pour être protégé !")
+    return device_id
+
+DEVICE_ID = get_device_id()
 
 def get_location():
     result = subprocess.run(
